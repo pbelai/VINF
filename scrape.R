@@ -1,17 +1,7 @@
-
-
-
-baseSelector <- 'body .home_page_body_ctn '
-
-visited <- list()
-urlsToVisit <- urlsToVisit[!urlsToVisit %in% visited]
-
-scrape <- function() {
+scrape <- function(numberOfGames = 1000) {
   library(rvest)
-  
+  library(data.table)
   url <- 'http://store.steampowered.com/'
-  
-  
   
   getAllGenres <- function() {
     selectorFilters <- '.home_page_gutter_block'
@@ -60,8 +50,7 @@ scrape <- function() {
   
   gameUrls <- list()
   i <- 1
-  print(listOfAllInGenres)
-  while (length(gameUrls) < 1000) {
+  while (length(gameUrls) < numberOfGames) {
     for (genrePage in listOfAllInGenres) {
       print(genrePage)
       elements <-
@@ -79,34 +68,214 @@ scrape <- function() {
       print(paste('Current number of games is ', length(gameUrls)))
     }
   }
-  gameUrls
+  
+  createDataTable <- function() {
+    data.table(
+      'APP_NAME' = character(),
+      'APP_DESC' = character(),
+      'APP_PRICE' = numeric(),
+      'RECENT_NUMBER_OF_REVIEWS' = numeric(),
+      'RECENT_REVIEW_SUMMARY' = character(),
+      'RECENT_SCORE' = numeric(),
+      'OVERALL_NUMBER_OF_REVIEWS' = numeric(),
+      'OVERALL_REVIEW_SUMMARY' = character(),
+      'OVERALL_SCORE' = numeric(),
+      'APP_TAGS' = list()
+    )
+  }
+  
+  getAppDetails <- function(webPage) {
+    gameRow <- createDataTable()
+    
+    getAppName <- function(webPage) {
+      appName <-
+        html_text(html_nodes(webPage, '.page_content_ctn .apphub_AppName'),
+                  trim = T) #appname
+      appName
+    }
+    
+    getAppDesc <- function(webPage) {
+      appDesc <-
+        html_text(html_nodes(webPage, '.page_content_ctn .game_description_snippet'),
+                  trim = T) #desc
+      appDesc
+    }
+    
+    getAppPrice <- function(webPage) {
+      appPrice <-
+        html_text(html_node(webPage, '.game_purchase_price.price'),
+                  trim = T)
+      if (is.na(appPrice)) {
+        appPrice <-
+          html_text(html_node(webPage, '.discount_final_price'),
+                    trim = T)
+      }
+      if (grepl('Free', appPrice))
+        return(0)
+      appPrice <-
+        if (is.na(str_extract(appPrice, '[0-9]+,[0-9]+')))
+          str_extract(appPrice, '[0-9]+,')
+      else
+        str_extract(appPrice, '[0-9]+,[0-9]+')
+      as.numeric(sub(',', '.', appPrice))
+    }
+    
+    getAppReviewsScores <- function(webPage) {
+      webNodes <-
+        html_nodes(webPage, '.user_reviews .user_reviews_summary_row')
+      reviewData <-
+        data.table(
+          'RECENT_NUMBER_OF_REVIEWS' = numeric(),
+          'RECENT_REVIEW_SUMMARY' = character(),
+          'RECENT_SCORE' = numeric(),
+          'OVERALL_NUMBER_OF_REVIEWS' = numeric(),
+          'OVERALL_REVIEW_SUMMARY' = character(),
+          'OVERALL_SCORE' = numeric()
+        )
+      RECENT_NUMBER_OF_REVIEWS <- -1
+      RECENT_REVIEW_SUMMARY <- 'NA'
+      RECENT_SCORE <- -1
+      OVERALL_NUMBER_OF_REVIEWS <- -1
+      OVERALL_REVIEW_SUMMARY <- 'NA'
+      OVERALL_SCORE <- -1
+      for (node in webNodes) {
+        if (html_text(html_nodes(node, '.subtitle '), trim = T) == 'Recent Reviews:') {
+          # get number of reviews
+          if (!is.na(html_text(html_node(node, '.responsive_hidden'), trim = T))) {
+            RECENT_NUMBER_OF_REVIEWS <-
+              paste(str_extract_all(html_text(
+                html_node(node, '.responsive_hidden'), trim = T
+              ), '[0-9]+')[[1]],
+              collapse = '')
+          }
+          if (!is.na(html_text(html_node(node, '.game_review_summary'), trim = T))) {
+            # get review word
+            if (!grepl('not_enough_reviews',
+                       html_attr(html_node(
+                         node, '.game_review_summary'
+                       ), 'class'))) {
+              RECENT_REVIEW_SUMMARY <-
+                html_text(html_node(node, '.game_review_summary'), trim = T)
+            }
+          }
+          if (!is.na(html_text(html_node(
+            node, '.responsive_reviewdesc'
+          )))) {
+            # get all percentage
+            score <- sub('%', '', str_extract(html_text(
+              html_node(node, '.responsive_reviewdesc'), trim = T
+            ), '[0-9]+%'))
+            RECENT_SCORE <- if (is.na(score))
+              - 1
+            else
+              score
+          }
+        } else if (html_text(html_nodes(node, '.subtitle '), trim = T) == 'All Reviews:') {
+          if (!is.na(html_text(html_node(node, '.responsive_hidden'), trim = T))) {
+            # get number of reviews
+            OVERALL_NUMBER_OF_REVIEWS <-
+              paste(str_extract_all(html_text(
+                html_node(node, '.responsive_hidden'), trim = T
+              ), '[0-9]+')[[1]],
+              collapse = '')
+          }
+          if (!is.na(html_text(html_node(node, '.game_review_summary'), trim = T))) {
+            # get review word
+            if (!grepl('not_enough_reviews',
+                       html_attr(html_node(
+                         node, '.game_review_summary'
+                       ), 'class'))) {
+              OVERALL_REVIEW_SUMMARY <-
+                html_text(html_node(node, '.game_review_summary'), trim = T)
+            }
+          }
+          if (!is.na(html_text(html_node(
+            node, '.responsive_reviewdesc'
+          )))) {
+            # get all percentage
+            score <- sub('%', '', str_extract(html_text(
+              html_node(node, '.responsive_reviewdesc'), trim = T
+            ), '[0-9]+%'))
+            OVERALL_SCORE <- if (is.na(score))
+              - 1
+            else
+              score
+          }
+        }
+      }
+      rbindlist(
+        list(
+          reviewData,
+          data.table(
+            'RECENT_NUMBER_OF_REVIEWS' = RECENT_NUMBER_OF_REVIEWS,
+            'RECENT_REVIEW_SUMMARY' = RECENT_REVIEW_SUMMARY,
+            'RECENT_SCORE' = RECENT_SCORE,
+            'OVERALL_NUMBER_OF_REVIEWS' = OVERALL_NUMBER_OF_REVIEWS,
+            'OVERALL_REVIEW_SUMMARY' = OVERALL_REVIEW_SUMMARY,
+            'OVERALL_SCORE' = OVERALL_SCORE
+          )
+        ),
+        use.names = T,
+        fill = F,
+        idcol = F
+      )
+    }
+    
+    getAppTags <- function(webPage) {
+      webNodes <- html_nodes(webPage, '.game_area_details_specs')
+      tags <- list()
+      for (node in webNodes) {
+        tags <- append(unlist(tags), html_text(node, trim = T))
+      }
+      tags
+    }
+    
+    reviewsScore <- getAppReviewsScores(webPage)
+    rbindlist(
+      list(
+        gameRow,
+        data.table(
+          'APP_NAME' = getAppName(webPage),
+          'APP_DESC' = getAppDesc(webPage),
+          'APP_PRICE' = getAppPrice(webPage),
+          'RECENT_NUMBER_OF_REVIEWS' = reviewsScore$RECENT_NUMBER_OF_REVIEWS,
+          'RECENT_REVIEW_SUMMARY' = reviewsScore$RECENT_REVIEW_SUMMARY,
+          'RECENT_SCORE' = reviewsScore$RECENT_SCORE,
+          'OVERALL_NUMBER_OF_REVIEWS' = reviewsScore$OVERALL_NUMBER_OF_REVIEWS,
+          'OVERALL_REVIEW_SUMMARY' = reviewsScore$OVERALL_REVIEW_SUMMARY,
+          'OVERALL_SCORE' = reviewsScore$OVERALL_SCORE,
+          'APP_TAGS' = list(getAppTags(webPage))
+        )
+      ),
+      use.names = T,
+      fill = F,
+      idcol = F
+    )
+  }
+  
+  gamesDetails <- createDataTable()
+  
+  for (gameUrl in gameUrls) {
+    webPage <- read_html(gameUrl)
+    a <<- webPage
+    if (is.na(html_node(webPage, '#agecheck_form')) && is.na(html_node(webPage, '#app_agegate'))) {
+      print(paste('downloading:',gameUrl))
+      
+      {
+        gamesDetails <- rbindlist(
+          list(gamesDetails,
+               getAppDetails(webPage)),
+          use.names = T,
+          fill = F,
+          idcol = F
+        )
+      }
+    } else {
+      print(paste('age restriction in:',gameUrl))
+    }
+    
+  }
+  gamesDetails
 }
-gameUrls <- scrape()
-
-# getUrls <- function(urlToVisit) {
-#   visited <<- append(visited, urlToVisit)
-#   if (grepl("^/", urlToVisit)) {
-#     urlToVisit <- paste(url, urlToVisit, sep = "")
-#   }
-#   try({
-#     webPage <- read_html(urlToVisit) #get html
-#     webBody <- html_nodes(webPage, baseSelector) #get body
-#     bodyUrls <- html_attr(html_nodes(webBody, hrefSelectors),
-#                           "href") #get nodes
-#     if (grepl("^/", urlToVisit)) {
-#       urlToVisit <- paste(url, urlToVisit, sep = "")
-#     }
-#     bodyUrls <- unique(bodyUrls[!bodyUrls %in% visited])
-#     for (urlToVisit in bodyUrls) {
-#
-#       print(paste(length(visited), urlToVisit, sep = ' | '))
-#       if (length(visited) > 500)
-#         return
-#       getUrls(urlToVisit)
-#     }
-#     uniqueBodyUrlsNew <- unique(html_attr(bodyUrls, "href"))
-#     urlsToVisit <-
-#       unique(append(urlsToVisit, uniqueBodyUrlsNew[!uniqueBodyUrlsNew %in% visited]))
-#   })
-# }
-getUrls(url)
+a <- NULL
+gameUrls <- scrape(5000)
