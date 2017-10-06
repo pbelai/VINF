@@ -1,8 +1,10 @@
-scrape <- function(numberOfGames = 1000) {
+scrape <- function(numberOfGames = 1000, fromInternet = T, fromFile = T) {
   library(rvest)
+  library(stringr)
   library(data.table)
   url <- 'http://store.steampowered.com/'
-  
+  gameUrls <<- list()
+  if (fromInternet && !fromFile){
   getAllGenres <- function() {
     selectorFilters <- '.home_page_gutter_block'
     genres <- getAllUrlsfromWithinElement(url, selectorFilters, 2)
@@ -23,7 +25,7 @@ scrape <- function(numberOfGames = 1000) {
       filtersUrls <- filtersUrls[numberOfElement]
     }
     urlsToVisit <- html_attr(filtersUrls, "href")
-    urlsToVisit
+    sub('[?]snr(.*)','',urlsToVisit)
   }
   
   getAllUrlsfromWithinElement <-
@@ -48,7 +50,7 @@ scrape <- function(numberOfGames = 1000) {
       append(unlist(listOfAllInGenres), showAllFromGenre(genre))
   }
   
-  gameUrls <- list()
+  
   i <- 1
   while (length(gameUrls) < numberOfGames) {
     for (genrePage in listOfAllInGenres) {
@@ -56,7 +58,7 @@ scrape <- function(numberOfGames = 1000) {
       elements <-
         getUrlOfElement(genrePage,
                         '#search_result_container > div> .search_result_row')
-      gameUrls <-
+      gameUrls <<-
         append(unlist(gameUrls), elements[!elements %in% gameUrls])
     }
     pattern <- paste('page', i, sep = '=')
@@ -68,9 +70,15 @@ scrape <- function(numberOfGames = 1000) {
       print(paste('Current number of games is ', length(gameUrls)))
     }
   }
-  
+  } else if (fromFile) {
+    gameUrls <<-fread('urls', sep = ';', header = F)$V1
+  }
+  else {
+    gameUrls <<- paste('pages/',list.files('pages/'), sep = '')
+  }
   createDataTable <- function() {
     data.table(
+      'URL' = character(),
       'APP_NAME' = character(),
       'APP_DESC' = character(),
       'APP_PRICE' = numeric(),
@@ -80,25 +88,32 @@ scrape <- function(numberOfGames = 1000) {
       'OVERALL_NUMBER_OF_REVIEWS' = numeric(),
       'OVERALL_REVIEW_SUMMARY' = character(),
       'OVERALL_SCORE' = numeric(),
-      'APP_TAGS' = list()
+      'APP_TAGS' = list(),
+      'APP_GENRES' = list(),
+      'APP_DEVELOPER' = character(),
+      'APP_PUBLISHER' = character(),
+      'APP_YEAR' = numeric()
     )
   }
   
-  getAppDetails <- function(webPage) {
+  getAppDetails <- function(webPage, url) {
     gameRow <- createDataTable()
     
     getAppName <- function(webPage) {
       appName <-
         html_text(html_nodes(webPage, '.page_content_ctn .apphub_AppName'),
                   trim = T) #appname
+      if (length(appName)==0) {return('-')}
       appName
     }
     
     getAppDesc <- function(webPage) {
       appDesc <-
-        html_text(html_nodes(webPage, '.page_content_ctn .game_description_snippet'),
-                  trim = T) #desc
+        sub("About This Game\r\n\t\t\t\t\t\t\t","",html_text(html_nodes(webPage, '.page_content_ctn #game_area_description'),
+                        trim = T)) #desc
+      if (length(appDesc)==0) {return('-')}
       appDesc
+      
     }
     
     getAppPrice <- function(webPage) {
@@ -117,7 +132,33 @@ scrape <- function(numberOfGames = 1000) {
           str_extract(appPrice, '[0-9]+,')
       else
         str_extract(appPrice, '[0-9]+,[0-9]+')
-      as.numeric(sub(',', '.', appPrice))
+      price <- as.numeric(sub(',', '.', appPrice))
+      if (length(price)==0) {return(0)}
+      price
+    }
+    
+    getAppGenres <- function(webPage) {
+      genres <- as.list(html_text(html_nodes(webPage,'.details_block a[href*=genre]')))
+      if (length(genres)==0) {return('-')}
+      genres
+    }
+    
+    getAppDeveloper <- function(webPage) {
+      developers <- as.list(html_text(html_nodes(webPage,'.details_block a[href*=developer]')))
+      if (length(developers)==0) {return('-')}
+      developers
+    }
+    
+    getAppPublisher <- function(webPage) {
+      publishers <- as.list(html_text(html_nodes(webPage,'.details_block a[href*=publisher]')))
+      if (length(publishers)==0) {return('-')}
+      publishers
+    }
+    
+    getAppReleaseDate <- function(webPage) {
+      releaseDate <- str_extract(html_text(html_node(webPage,'.date')),'[0-9]{4}')
+      if (is.na(releaseDate) || length(releaseDate)==0) {return('-')}
+      releaseDate
     }
     
     getAppReviewsScores <- function(webPage) {
@@ -222,19 +263,22 @@ scrape <- function(numberOfGames = 1000) {
     }
     
     getAppTags <- function(webPage) {
-      webNodes <- html_nodes(webPage, '.game_area_details_specs')
+      webNodes <- html_nodes(webPage, '.game_area_details_specs, .app_tag:not(.add_button)')
       tags <- list()
       for (node in webNodes) {
         tags <- append(unlist(tags), html_text(node, trim = T))
       }
-      tags
+      if (length(tags)==0) {return('-')}
+      unlist(tags)
     }
     
     reviewsScore <- getAppReviewsScores(webPage)
+
     rbindlist(
       list(
         gameRow,
         data.table(
+          'URL' = url,
           'APP_NAME' = getAppName(webPage),
           'APP_DESC' = getAppDesc(webPage),
           'APP_PRICE' = getAppPrice(webPage),
@@ -244,8 +288,12 @@ scrape <- function(numberOfGames = 1000) {
           'OVERALL_NUMBER_OF_REVIEWS' = reviewsScore$OVERALL_NUMBER_OF_REVIEWS,
           'OVERALL_REVIEW_SUMMARY' = reviewsScore$OVERALL_REVIEW_SUMMARY,
           'OVERALL_SCORE' = reviewsScore$OVERALL_SCORE,
-          'APP_TAGS' = list(getAppTags(webPage))
-        )
+          'APP_TAGS' = list(getAppTags(webPage)),
+          'APP_GENRES' = list(getAppGenres(webPage)),
+          'APP_DEVELOPER' = getAppDeveloper(webPage),
+          'APP_PUBLISHER' = getAppPublisher(webPage),
+          'APP_YEAR' = getAppReleaseDate(webPage)
+          )
       ),
       use.names = T,
       fill = F,
@@ -256,15 +304,22 @@ scrape <- function(numberOfGames = 1000) {
   gamesDetails <- createDataTable()
   
   for (gameUrl in gameUrls) {
-    webPage <- read_html(gameUrl)
+    if (fromInternet || fromFile) {
+      webPage <- html_session(gameUrl,httr::set_cookies('birthtime'='283993201', 'mature_content'= '1')) %>% read_html()
+    } else {
+      webPage <- read_html(gameUrl)
+    }
     a <<- webPage
+    write_xml(webPage,paste('pages/',sub('/','',sub('app/','',str_extract(gameUrl,'app/[0-9]*/'))), sep = ""))
+    
     if (is.na(html_node(webPage, '#agecheck_form')) && is.na(html_node(webPage, '#app_agegate'))) {
       print(paste('downloading:',gameUrl))
       
       {
+        
         gamesDetails <- rbindlist(
           list(gamesDetails,
-               getAppDetails(webPage)),
+               getAppDetails(webPage, gameUrl)),
           use.names = T,
           fill = F,
           idcol = F
@@ -273,9 +328,11 @@ scrape <- function(numberOfGames = 1000) {
     } else {
       print(paste('age restriction in:',gameUrl))
     }
-    
+    if (nrow(gamesDetails) >= numberOfGames) {
+      break;
+    }
   }
   gamesDetails
 }
 a <- NULL
-gameUrls <- scrape(5000)
+test <- scrape(40000,F,T)
