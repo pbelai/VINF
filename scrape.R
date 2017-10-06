@@ -104,6 +104,7 @@ scrape <- function(numberOfGames = 1000, fromInternet = T, fromFile = T) {
         html_text(html_nodes(webPage, '.page_content_ctn .apphub_AppName'),
                   trim = T) #appname
       if (length(appName)==0) {return('-')}
+      Encoding(appName) <- "UTF-8"
       appName
     }
     
@@ -112,8 +113,8 @@ scrape <- function(numberOfGames = 1000, fromInternet = T, fromFile = T) {
         sub("About This Game\r\n\t\t\t\t\t\t\t","",html_text(html_nodes(webPage, '.page_content_ctn #game_area_description'),
                         trim = T)) #desc
       if (length(appDesc)==0) {return('-')}
+      Encoding(appDesc) <- "UTF-8"
       appDesc
-      
     }
     
     getAppPrice <- function(webPage) {
@@ -290,8 +291,8 @@ scrape <- function(numberOfGames = 1000, fromInternet = T, fromFile = T) {
           'OVERALL_SCORE' = reviewsScore$OVERALL_SCORE,
           'APP_TAGS' = list(getAppTags(webPage)),
           'APP_GENRES' = list(getAppGenres(webPage)),
-          'APP_DEVELOPER' = getAppDeveloper(webPage),
-          'APP_PUBLISHER' = getAppPublisher(webPage),
+          'APP_DEVELOPER' = list(getAppDeveloper(webPage)),
+          'APP_PUBLISHER' = list(getAppPublisher(webPage)),
           'APP_YEAR' = getAppReleaseDate(webPage)
           )
       ),
@@ -325,11 +326,13 @@ scrape <- function(numberOfGames = 1000, fromInternet = T, fromFile = T) {
           idcol = F
         )
       }
+
     } else {
       print(paste('age restriction in:',gameUrl))
     }
-    if (nrow(gamesDetails) >= numberOfGames) {
-      break;
+    if (nrow(gamesDetails) >= 100) {
+      elastic("http://localhost:9200", "steamgame", "data") %index% gamesDetails
+      gamesDetails <- createDataTable()
     }
   }
   gamesDetails
