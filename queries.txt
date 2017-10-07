@@ -1,0 +1,87 @@
+POST /steamgame/_search
+{
+    "_source": {"includes": ["app_name"]},   
+    "size": 500
+}
+
+GET /_search
+{
+"size": 0,
+"aggs" : {
+    "steamgame" : {
+        "terms" : { "field" : "app_tags.keyword", "size": 100}
+    }
+}
+}
+# get gametags from games with score greater than and count those tags 
+GET /steamgame/_search
+{
+"size": 0,
+"query": {
+"range": {
+    "overall_score.keyword": {
+      "gte": 95
+    }
+    
+  }
+}, 
+"aggs" : {
+    "steamgame" : {
+        "terms" : {
+          "field" : "app_tags.keyword",
+          "size":100
+          
+        }
+    }
+}
+}
+
+# get app_genres from games with score greater than and count those app_genres 
+GET /steamgame/_search
+{
+"size": 0,
+"query": {
+"range": {
+    "overall_score.keyword": {
+      "gte": 95
+    }
+    
+  }
+}, 
+"aggs" : {
+    "steamgame" : {
+        "terms" : {
+          "field" : "app_genres.keyword",
+          "size":100
+          
+        }
+    }
+}
+}
+
+# get avg price of app_genres with score greater than
+GET /steamgame/_search
+{
+"size": 0,
+"query": {
+"range": {
+    "overall_score.keyword": {
+      "gte": 95
+    }
+  }
+}, 
+"aggs" : {
+    "steamgame" : {
+      "terms": {
+        "field": "app_genres.keyword"
+      },
+      "aggs" : {
+        "steamgame" : {
+          "avg" : {
+            "field": "app_price"
+          }
+        }
+    }
+    }
+}
+}

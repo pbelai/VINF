@@ -2,6 +2,7 @@ scrape <- function(numberOfGames = 1000, fromInternet = T, fromFile = T) {
   library(rvest)
   library(stringr)
   library(data.table)
+  library(elasticsearchr)
   url <- 'http://store.steampowered.com/'
   gameUrls <<- list()
   if (fromInternet && !fromFile){
@@ -52,15 +53,25 @@ scrape <- function(numberOfGames = 1000, fromInternet = T, fromFile = T) {
   
   
   i <- 1
-  while (length(gameUrls) < numberOfGames) {
+  while (length(gameUrls) < numberOfGames && length(listOfAllInGenres)!=0) {
+    remove <- list()
     for (genrePage in listOfAllInGenres) {
       print(genrePage)
       elements <-
         getUrlOfElement(genrePage,
                         '#search_result_container > div> .search_result_row')
+      if (length(elements) == 0) {
+        remove <- append(unlist(remove), genrePage)
+      }
       gameUrls <<-
         append(unlist(gameUrls), elements[!elements %in% gameUrls])
     }
+    
+    if (length(remove) != 0) {
+      listOfAllInGenres <- listOfAllInGenres[!listOfAllInGenres %in% remove]
+      print(paste('removing: ',remove))
+    }
+    
     pattern <- paste('page', i, sep = '=')
     i <- i + 1
     replacement <- paste('page', i, sep = '=')
@@ -339,3 +350,23 @@ scrape <- function(numberOfGames = 1000, fromInternet = T, fromFile = T) {
 }
 a <- NULL
 test <- scrape(40000,F,T)
+
+quer <- query('{"range": {
+    "overall_score.keyword": {
+              "gte": 95
+              }
+              }}')
+
+agg <- aggs('{"steamgame" : {
+  "terms": {
+    "field": "app_genres.keyword"
+  },
+  "aggs" : {
+    "steamgame" : {
+      "avg" : {
+        "field": "app_price"
+      }
+    }
+  }
+}}')
+elastic("http://localhost:9200", "steamgame", "data") %search% (quer + agg)
