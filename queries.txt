@@ -85,3 +85,27 @@ GET /steamgame/_search
     }
 }
 }
+
+# to show free to play != price 0 :D
+GET /steamgame/_search
+{
+
+"query": {
+  "bool": {
+        "should": [
+            { "match": { "app_genres": "Free to play" }},
+            { "range": { "app_price": { "gt": "0" }}}
+        ]
+
+
+}},
+    "_source": {"includes": [
+      "app_name",
+      "app_genres",
+      "overall_score",
+      "app_price",
+      "url"]
+      
+    },
+  "size": 500
+}

@@ -370,3 +370,7 @@ agg <- aggs('{"steamgame" : {
   }
 }}')
 elastic("http://localhost:9200", "steamgame", "data") %search% (quer + agg)
+
+
+# search podla score napr name desc
+#  cenove kategorie a contnut
