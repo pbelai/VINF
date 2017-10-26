@@ -1,6 +1,7 @@
 library(elasticsearchr)
 library(ggplot2)
 library(plotly)
+library(data.table)
 source("../Logic.R")
 
 server <- function(input, output) {

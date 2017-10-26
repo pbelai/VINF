@@ -348,29 +348,6 @@ scrape <- function(numberOfGames = 1000, fromInternet = T, fromFile = T) {
   }
   gamesDetails
 }
-a <- NULL
-test <- scrape(40000,F,T)
-
-quer <- query('{"range": {
-    "overall_score.keyword": {
-              "gte": 95
-              }
-              }}')
-
-agg <- aggs('{"steamgame" : {
-  "terms": {
-    "field": "app_genres.keyword"
-  },
-  "aggs" : {
-    "steamgame" : {
-      "avg" : {
-        "field": "app_price"
-      }
-    }
-  }
-}}')
-elastic("http://localhost:9200", "steamgame", "data") %search% (quer + agg)
-
 
 # search podla score napr name desc
 #  cenove kategorie a contnut
